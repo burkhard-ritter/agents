@@ -65,8 +65,9 @@ Fetch a web page and convert it to readable Markdown format.
 
 ## Notes
 
-- Search results are fetched from DuckDuckGo (no API key required)
+- **Runtime:** Both tools are TypeScript scripts that run with [Deno](https://deno.com). Deno must be installed and on `PATH`. On first run, `jsr:@b-fuze/deno-dom` is downloaded and cached automatically — no manual install needed.
+- **Cross-platform:** Tools work on Windows, Linux, and macOS without any additional dependencies (no curl, pandoc, lynx, or w3m required).
+- Search results are fetched from DuckDuckGo (no API key required). DuckDuckGo may return a bot-detection page for certain IPs or after repeated requests — the tool reports this clearly. Try again after a few minutes, or use `fetch` with a known URL instead.
 - Web pages are converted to Markdown for easier reading
 - Long pages are truncated to avoid overwhelming output
-- Some websites may block automated requests or require JavaScript
-- For best results with documentation, use `fetch` directly on known doc URLs
+- Some websites may block automated requests or require JavaScript (SPAs)

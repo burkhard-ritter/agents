@@ -1,74 +1,93 @@
-#!/bin/bash
-# Search the web using DuckDuckGo and return results
+#!/usr/bin/env -S deno run --allow-net
+// search: query DuckDuckGo and return structured results.
+// Usage: search <query> [num_results]
 
-set -euo pipefail
+import { DOMParser } from "jsr:@b-fuze/deno-dom";
 
-# Check arguments
-if [ $# -lt 1 ]; then
-    echo "Usage: search <query> [num_results]"
-    echo "Example: search 'python async tutorial' 10"
-    exit 1
-fi
+const [query, numResultsArg] = Deno.args;
+const numResults = parseInt(numResultsArg ?? "5");
 
-QUERY="$1"
-NUM_RESULTS="${2:-5}"
+if (!query) {
+  console.error("Usage: search <query> [num_results]");
+  console.error("Example: search 'deno typescript' 10");
+  Deno.exit(1);
+}
 
-# URL encode the query
-ENCODED_QUERY=$(echo "$QUERY" | sed 's/ /+/g' | sed 's/[^a-zA-Z0-9+]//g')
+console.log(`# Search Results for: ${query}\n`);
 
-# Fetch search results from DuckDuckGo HTML
-RESPONSE=$(curl -s -A "Mozilla/5.0" "https://html.duckduckgo.com/html/?q=${ENCODED_QUERY}")
+// ---------------------------------------------------------------------------
+// 1. Fetch DuckDuckGo HTML search page
+// ---------------------------------------------------------------------------
+let html: string;
+try {
+  const res = await fetch(
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+    {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    },
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  html = await res.text();
+} catch (e) {
+  console.error(`Error fetching search results: ${(e as Error).message}`);
+  Deno.exit(1);
+}
 
-echo "# Search Results for: $QUERY"
-echo ""
+// ---------------------------------------------------------------------------
+// 2. Parse HTML
+// ---------------------------------------------------------------------------
+const doc = new DOMParser().parseFromString(html, "text/html")!;
 
-# Parse results (extract title, URL, and snippet)
-# DuckDuckGo HTML format uses specific class names
-COUNT=0
-echo "$RESPONSE" | grep -o '<a class="result__a"[^>]*>.*</a>' | head -n "$NUM_RESULTS" | while IFS= read -r line; do
-    COUNT=$((COUNT + 1))
-    
-    # Extract URL
-    URL=$(echo "$line" | grep -o 'href="[^"]*"' | sed 's/href="//;s/"$//' | head -1)
-    # Decode URL (DuckDuckGo wraps URLs)
-    if [[ "$URL" == *"uddg="* ]]; then
-        URL=$(echo "$URL" | sed 's/.*uddg=//' | sed 's/%.*//')
-        URL=$(printf '%b' "${URL//%/\\x}")
-    fi
-    
-    # Extract title
-    TITLE=$(echo "$line" | sed 's/<[^>]*>//g' | sed 's/&amp;/\&/g;s/&lt;/</g;s/&gt;/>/g;s/&quot;/"/g')
-    
-    # Try to find snippet (in the parent result div)
-    echo "## $COUNT. $TITLE"
-    echo ""
-    echo "**URL:** $URL"
-    echo ""
-done
+// Detect bot / CAPTCHA page
+if (doc.querySelector(".anomaly-modal__box")) {
+  console.error(
+    "DuckDuckGo returned a bot-detection page.\n" +
+      "This can happen with certain IPs or after repeated requests.\n" +
+      "Try again in a few minutes, or use `fetch` with a known URL instead.",
+  );
+  Deno.exit(1);
+}
 
-# Also extract snippets separately as they're in different elements
-echo ""
-echo "---"
-echo ""
-echo "### Snippets"
-echo ""
+// ---------------------------------------------------------------------------
+// 3. Extract results
+// ---------------------------------------------------------------------------
 
-COUNT=0
-echo "$RESPONSE" | grep -o '<a class="result__snippet"[^>]*>.*</a>' | head -n "$NUM_RESULTS" | while IFS= read -r line; do
-    COUNT=$((COUNT + 1))
-    SNIPPET=$(echo "$line" | sed 's/<[^>]*>//g' | sed 's/&amp;/\&/g;s/&lt;/</g;s/&gt;/>/g;s/&quot;/"/g;s/&#x27;/'\''/g')
-    echo "$COUNT. $SNIPPET"
-    echo ""
-done
+/** Resolve DuckDuckGo's redirect wrapper, e.g. /?uddg=<encoded-url> */
+function resolveUrl(raw: string): string {
+  const uddg = raw.match(/[?&]uddg=([^&]+)/)?.[1];
+  return uddg ? decodeURIComponent(uddg) : raw;
+}
 
-# If no results found, try alternative parsing
-if [ "$COUNT" -eq 0 ]; then
-    echo "Note: Could not parse DuckDuckGo results in expected format."
-    echo "Trying alternative search..."
-    echo ""
-    
-    # Try a simpler approach - just get links
-    echo "$RESPONSE" | grep -oP 'href="[^"]*"' | grep -v "duckduckgo.com" | head -n "$NUM_RESULTS" | while IFS= read -r link; do
-        echo "- $link"
-    done
-fi
+const resultEls = Array.from(doc.querySelectorAll(".result")).slice(
+  0,
+  numResults,
+);
+
+let count = 0;
+for (const result of resultEls) {
+  const titleEl = result.querySelector(".result__a");
+  if (!titleEl) continue;
+
+  const title = titleEl.textContent?.trim();
+  const snippet = result.querySelector(".result__snippet")?.textContent?.trim();
+  const url = resolveUrl(titleEl.getAttribute("href") ?? "");
+
+  count++;
+  console.log(`## ${count}. ${title}\n`);
+  console.log(`**URL:** ${url}\n`);
+  if (snippet) console.log(`${snippet}\n`);
+}
+
+if (count === 0) {
+  console.log(
+    "No results found. " +
+      "DuckDuckGo may have changed its HTML format — " +
+      "check https://html.duckduckgo.com/html/?q=test in a browser to verify.",
+  );
+}

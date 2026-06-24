@@ -1,91 +1,148 @@
-#!/bin/bash
-# Fetch a web page and convert to readable Markdown
+#!/usr/bin/env -S deno run --allow-net
+// fetch: retrieve a web page and convert it to readable Markdown.
+// Usage: fetch <url> [max_length]
 
-set -euo pipefail
+import { DOMParser, Element, Node } from "jsr:@b-fuze/deno-dom";
 
-# Check arguments
-if [ $# -lt 1 ]; then
-    echo "Usage: fetch <url> [max_length]"
-    echo "Example: fetch 'https://docs.python.org/3/library/asyncio.html' 10000"
-    exit 1
-fi
+const [url, maxLengthArg] = Deno.args;
+const maxLength = parseInt(maxLengthArg ?? "10000");
 
-URL="$1"
-MAX_LENGTH="${2:-10000}"
+if (!url) {
+  console.error("Usage: fetch <url> [max_length]");
+  console.error("Example: fetch 'https://docs.python.org/3/' 10000");
+  Deno.exit(1);
+}
 
-echo "# Fetching: $URL"
-echo ""
+console.log(`# Fetching: ${url}\n`);
 
-# Create temp file for HTML
-TMPFILE=$(mktemp)
-trap 'rm -f "$TMPFILE"' EXIT
+// ---------------------------------------------------------------------------
+// 1. Fetch the page
+// ---------------------------------------------------------------------------
+let html: string;
+try {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  html = await res.text();
+} catch (e) {
+  console.error(`Error fetching URL: ${(e as Error).message}`);
+  Deno.exit(1);
+}
 
-# Fetch the page
-if ! curl -s -L -A "Mozilla/5.0" "$URL" -o "$TMPFILE"; then
-    echo "Error: Failed to fetch URL"
-    exit 1
-fi
+// ---------------------------------------------------------------------------
+// 2. Parse and clean up the DOM
+// ---------------------------------------------------------------------------
+const doc = new DOMParser().parseFromString(html, "text/html")!;
 
-# Check if file is empty
-if [ ! -s "$TMPFILE" ]; then
-    echo "Error: Received empty response"
-    exit 1
-fi
+// Remove elements that add noise but no readable content
+for (const sel of [
+  "script", "style", "noscript", "iframe", "svg",
+  "nav", "footer", "header", "aside", "form",
+  "[role='banner']", "[role='navigation']", "[role='complementary']",
+]) {
+  doc.querySelectorAll(sel).forEach((el) => el.parentNode?.removeChild(el));
+}
 
-# Try to convert HTML to Markdown using available tools
-if command -v pandoc &> /dev/null; then
-    # Pandoc is the best option - converts HTML to Markdown
-    pandoc -f html -t markdown "$TMPFILE" | head -c "$MAX_LENGTH"
-    TRUNCATED=$?
-    if [ $TRUNCATED -eq 141 ]; then
-        echo ""
-        echo ""
-        echo "---"
-        echo "*[Content truncated at $MAX_LENGTH characters]*"
-    fi
-elif command -v lynx &> /dev/null; then
-    # Lynx is good for plain text
-    lynx -dump -nolist "$TMPFILE" | head -c "$MAX_LENGTH"
-    TRUNCATED=$?
-    if [ $TRUNCATED -eq 141 ]; then
-        echo ""
-        echo ""
-        echo "---"
-        echo "*[Content truncated at $MAX_LENGTH characters]*"
-    fi
-elif command -v w3m &> /dev/null; then
-    # w3m is another good option
-    w3m -dump "$TMPFILE" | head -c "$MAX_LENGTH"
-    TRUNCATED=$?
-    if [ $TRUNCATED -eq 141 ]; then
-        echo ""
-        echo ""
-        echo "---"
-        echo "*[Content truncated at $MAX_LENGTH characters]*"
-    fi
-else
-    # Fallback: basic HTML tag stripping with sed
-    echo "*Note: Install pandoc, lynx, or w3m for better formatting*"
-    echo ""
-    
-    # Remove script and style tags with content
-    sed -e '/<script\>/,/<\/script>/d' -e '/<style\>/,/<\/style>/d' "$TMPFILE" | \
-    # Remove HTML tags
-    sed -e 's/<[^>]*>//g' | \
-    # Decode HTML entities
-    sed -e 's/&nbsp;/ /g' -e 's/&amp;/\&/g' -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&quot;/"/g' -e "s/&#x27;/'/g" | \
-    # Remove extra blank lines
-    sed -e '/^[[:space:]]*$/d' | \
-    # Limit length
-    head -c "$MAX_LENGTH"
-    
-    TRUNCATED=$?
-    if [ $TRUNCATED -eq 141 ]; then
-        echo ""
-        echo ""
-        echo "---"
-        echo "*[Content truncated at $MAX_LENGTH characters]*"
-    fi
-fi
+// ---------------------------------------------------------------------------
+// 3. Find the best content root (main > article > [role=main] > body)
+// ---------------------------------------------------------------------------
+const root =
+  doc.querySelector("main") ??
+  doc.querySelector("article") ??
+  doc.querySelector('[role="main"]') ??
+  doc.querySelector("body")!;
 
-echo ""
+// ---------------------------------------------------------------------------
+// 4. Convert DOM subtree to Markdown
+// ---------------------------------------------------------------------------
+function toMarkdown(node: Node): string {
+  // Text node — normalise whitespace
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent?.replace(/\s+/g, " ") ?? "";
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return "";
+
+  const el = node as Element;
+  const tag = el.tagName.toLowerCase();
+  const inner = () =>
+    Array.from(el.childNodes).map(toMarkdown).join("").trim();
+
+  switch (tag) {
+    case "h1": return `\n\n# ${el.textContent?.trim()}\n\n`;
+    case "h2": return `\n\n## ${el.textContent?.trim()}\n\n`;
+    case "h3": return `\n\n### ${el.textContent?.trim()}\n\n`;
+    case "h4":
+    case "h5":
+    case "h6": return `\n\n#### ${el.textContent?.trim()}\n\n`;
+    case "p": {
+      const text = inner();
+      return text ? `\n\n${text}\n\n` : "";
+    }
+    case "br": return "\n";
+    case "hr": return "\n\n---\n\n";
+    case "ul":
+    case "ol": return `\n${Array.from(el.childNodes).map(toMarkdown).join("")}\n`;
+    case "li": return `\n- ${inner()}`;
+    case "a": {
+      const href = el.getAttribute("href");
+      const text = inner();
+      if (!text) return "";
+      return href && !href.startsWith("javascript:") ? `[${text}](${href})` : text;
+    }
+    case "strong":
+    case "b": {
+      const text = inner();
+      return text ? `**${text}**` : "";
+    }
+    case "em":
+    case "i": {
+      const text = inner();
+      return text ? `*${text}*` : "";
+    }
+    case "code": return `\`${el.textContent}\``;
+    case "pre": return `\n\`\`\`\n${el.textContent?.trim()}\n\`\`\`\n`;
+    case "blockquote":
+      return `\n> ${inner().replace(/\n/g, "\n> ")}\n`;
+    case "img": {
+      const alt = el.getAttribute("alt")?.trim();
+      const src = el.getAttribute("src") ?? "";
+      return alt ? `![${alt}](${src})` : "";
+    }
+    case "table": return `\n${inner()}\n`;
+    case "tr": return `${Array.from(el.childNodes).map(toMarkdown).join(" | ")}\n`;
+    case "th":
+    case "td": return inner();
+    default:
+      return Array.from(el.childNodes).map(toMarkdown).join("");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 5. Render, tidy whitespace, truncate
+// ---------------------------------------------------------------------------
+let text = toMarkdown(root);
+text = text
+  .replace(/[ \t]+/g, " ")       // collapse horizontal whitespace
+  .replace(/ \n/g, "\n")         // remove trailing spaces before newlines
+  .replace(/\n[ ]/g, "\n")       // remove leading spaces after newlines
+  .replace(/\n{3,}/g, "\n\n")    // collapse 3+ blank lines to 2
+  .trim();
+
+if (text.length > maxLength) {
+  text =
+    text.slice(0, maxLength) +
+    `\n\n---\n*[Content truncated at ${maxLength} characters]*`;
+}
+
+if (!text) {
+  console.log("*(No readable content could be extracted from this page.)*");
+} else {
+  console.log(text);
+}
