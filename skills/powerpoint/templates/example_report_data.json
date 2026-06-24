@@ -1,0 +1,90 @@
+{
+    "title": "Quarterly Business Review",
+    "subtitle": "Q4 2025 Performance Report",
+    "sections": [
+        {
+            "title": "Executive Summary",
+            "slides": [
+                {
+                    "title": "Key Highlights",
+                    "content": [
+                        "Revenue increased 25% year-over-year",
+                        "Customer satisfaction score: 4.7/5.0",
+                        "Launched 3 new product features",
+                        "Expanded to 5 new markets"
+                    ]
+                },
+                {
+                    "title": "Financial Performance",
+                    "content": [
+                        "Total Revenue: $5.2M",
+                        "Operating Expenses: $3.8M",
+                        "Net Profit: $1.4M",
+                        "Profit Margin: 26.9%"
+                    ]
+                }
+            ]
+        },
+        {
+            "title": "Product Development",
+            "slides": [
+                {
+                    "title": "New Features Released",
+                    "content": [
+                        "Advanced Analytics Dashboard",
+                        "Mobile App Integration",
+                        "Real-time Collaboration Tools"
+                    ]
+                },
+                {
+                    "title": "Development Metrics",
+                    "content": [
+                        "Sprint Velocity: 45 points",
+                        "Code Coverage: 87%",
+                        "Bug Resolution Time: 2.3 days average",
+                        "Feature Adoption Rate: 68%"
+                    ]
+                }
+            ]
+        },
+        {
+            "title": "Market Expansion",
+            "slides": [
+                {
+                    "title": "New Markets Entered",
+                    "content": [
+                        "Southeast Asia",
+                        "Latin America",
+                        "Eastern Europe",
+                        "Middle East",
+                        "Australia & New Zealand"
+                    ]
+                },
+                {
+                    "title": "Market Performance",
+                    "content": [
+                        "Total New Customers: 1,250",
+                        "Market Penetration: 12% average",
+                        "Customer Retention: 89%",
+                        "Average Deal Size: $4,200"
+                    ]
+                }
+            ]
+        },
+        {
+            "title": "Next Quarter Goals",
+            "slides": [
+                {
+                    "title": "Q1 2026 Objectives",
+                    "content": [
+                        "Launch enterprise tier product",
+                        "Achieve 95% customer satisfaction",
+                        "Grow revenue by 30%",
+                        "Reduce customer acquisition cost by 15%",
+                        "Expand team by 20 people"
+                    ]
+                }
+            ]
+        }
+    ]
+}

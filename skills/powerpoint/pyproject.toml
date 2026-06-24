@@ -1,0 +1,19 @@
+[project]
+name = "powerpoint-skill"
+version = "1.0.0"
+description = "Claude Code skill for PowerPoint manipulation"
+requires-python = ">=3.8"
+dependencies = [
+    "python-pptx>=1.0.0",
+    "pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+]

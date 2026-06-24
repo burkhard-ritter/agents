@@ -1,0 +1,74 @@
+#!/bin/bash
+# Search the web using DuckDuckGo and return results
+
+set -euo pipefail
+
+# Check arguments
+if [ $# -lt 1 ]; then
+    echo "Usage: search <query> [num_results]"
+    echo "Example: search 'python async tutorial' 10"
+    exit 1
+fi
+
+QUERY="$1"
+NUM_RESULTS="${2:-5}"
+
+# URL encode the query
+ENCODED_QUERY=$(echo "$QUERY" | sed 's/ /+/g' | sed 's/[^a-zA-Z0-9+]//g')
+
+# Fetch search results from DuckDuckGo HTML
+RESPONSE=$(curl -s -A "Mozilla/5.0" "https://html.duckduckgo.com/html/?q=${ENCODED_QUERY}")
+
+echo "# Search Results for: $QUERY"
+echo ""
+
+# Parse results (extract title, URL, and snippet)
+# DuckDuckGo HTML format uses specific class names
+COUNT=0
+echo "$RESPONSE" | grep -o '<a class="result__a"[^>]*>.*</a>' | head -n "$NUM_RESULTS" | while IFS= read -r line; do
+    COUNT=$((COUNT + 1))
+    
+    # Extract URL
+    URL=$(echo "$line" | grep -o 'href="[^"]*"' | sed 's/href="//;s/"$//' | head -1)
+    # Decode URL (DuckDuckGo wraps URLs)
+    if [[ "$URL" == *"uddg="* ]]; then
+        URL=$(echo "$URL" | sed 's/.*uddg=//' | sed 's/%.*//')
+        URL=$(printf '%b' "${URL//%/\\x}")
+    fi
+    
+    # Extract title
+    TITLE=$(echo "$line" | sed 's/<[^>]*>//g' | sed 's/&amp;/\&/g;s/&lt;/</g;s/&gt;/>/g;s/&quot;/"/g')
+    
+    # Try to find snippet (in the parent result div)
+    echo "## $COUNT. $TITLE"
+    echo ""
+    echo "**URL:** $URL"
+    echo ""
+done
+
+# Also extract snippets separately as they're in different elements
+echo ""
+echo "---"
+echo ""
+echo "### Snippets"
+echo ""
+
+COUNT=0
+echo "$RESPONSE" | grep -o '<a class="result__snippet"[^>]*>.*</a>' | head -n "$NUM_RESULTS" | while IFS= read -r line; do
+    COUNT=$((COUNT + 1))
+    SNIPPET=$(echo "$line" | sed 's/<[^>]*>//g' | sed 's/&amp;/\&/g;s/&lt;/</g;s/&gt;/>/g;s/&quot;/"/g;s/&#x27;/'\''/g')
+    echo "$COUNT. $SNIPPET"
+    echo ""
+done
+
+# If no results found, try alternative parsing
+if [ "$COUNT" -eq 0 ]; then
+    echo "Note: Could not parse DuckDuckGo results in expected format."
+    echo "Trying alternative search..."
+    echo ""
+    
+    # Try a simpler approach - just get links
+    echo "$RESPONSE" | grep -oP 'href="[^"]*"' | grep -v "duckduckgo.com" | head -n "$NUM_RESULTS" | while IFS= read -r link; do
+        echo "- $link"
+    done
+fi

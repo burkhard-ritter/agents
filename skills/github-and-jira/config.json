@@ -1,0 +1,75 @@
+{
+  "github": {
+    "default_org": "sportidentgmbh",
+    "default_repo": "sportidentgmbh/work",
+    "projects": {
+      "work": {
+        "number": 6,
+        "owner": "sportidentgmbh",
+        "id": "PVT_kwDOBFZTm84BD6ca"
+      }
+    },
+    "user_mappings": {
+      "svenja": "Svenja86",
+      "hakan": "hknozturk",
+      "hawken": "hknozturk",
+      "thomas": "thomas-scherer",
+      "burkhard": "burkhard-ritter",
+      "david": "david-lippmann",
+      "christian": "Christian1H",
+      "brian": "BrianBuettner",
+      "juliane": "JulianeSPORTident",
+      "olga": "OlgaKoslowa",
+      "siegfried": "siegfriedr",
+      "juergen": "juergen-sportident-com",
+      "christine": "christine-sportident",
+      "kuba": "kuba-si",
+      "royce": "RoyceThomasIype",
+      "umer": "Umer-Mahmood",
+      "slavko": "SlavkoSI",
+      "petlof": "petlof",
+      "andreas": "andreasSI11",
+      "anh": "anh-sportident",
+      "hoa": "hoa-sportident",
+      "ute": "utesportident"
+    },
+    "org_members": [
+      {"login": "andreasSI11", "id": 178874787},
+      {"login": "anh-sportident", "id": 242356088},
+      {"login": "BrianBuettner", "id": 157787800},
+      {"login": "burkhard-ritter", "id": 5515441},
+      {"login": "CA2804", "id": 242355804},
+      {"login": "Christian1H", "id": 198913203},
+      {"login": "christine-sportident", "id": 242219875},
+      {"login": "david-lippmann", "id": 82161788},
+      {"login": "hknozturk", "id": 22871057, "name": "Hawken"},
+      {"login": "hoa-sportident", "id": 243161812},
+      {"login": "juergen-sportident-com", "id": 88655364},
+      {"login": "JulianeSPORTident", "id": 171012463},
+      {"login": "krisative0319", "id": 185205369},
+      {"login": "kuba-si", "id": 102220637},
+      {"login": "OlgaKoslowa", "id": 171014233},
+      {"login": "pavlokar", "id": 202140947},
+      {"login": "petlof", "id": 1931986},
+      {"login": "RoyceThomasIype", "id": 39577739},
+      {"login": "si-mt", "id": 187495175},
+      {"login": "siegfriedr", "id": 39617756},
+      {"login": "SlavkoSI", "id": 71313556},
+      {"login": "sportident-github-user", "id": 78273496},
+      {"login": "sportident-timing", "id": 128663353},
+      {"login": "Svenja86", "id": 178883179},
+      {"login": "tarmosi", "id": 166008661},
+      {"login": "thomas-scherer", "id": 72768501, "name": "Thomas Scherer"},
+      {"login": "Umer-Mahmood", "id": 41982083},
+      {"login": "utesportident", "id": 48496236}
+    ]
+  },
+  "jira": {
+    "default_project": "NEP",
+    "user_mappings": {
+      "thomas": "thomas.scherer@sportident.com",
+      "hakan": "hakan@sportident.com",
+      "burkhard": "burkhard@sportident.com"
+    }
+  }
+}

@@ -1,0 +1,91 @@
+#!/bin/bash
+# Fetch a web page and convert to readable Markdown
+
+set -euo pipefail
+
+# Check arguments
+if [ $# -lt 1 ]; then
+    echo "Usage: fetch <url> [max_length]"
+    echo "Example: fetch 'https://docs.python.org/3/library/asyncio.html' 10000"
+    exit 1
+fi
+
+URL="$1"
+MAX_LENGTH="${2:-10000}"
+
+echo "# Fetching: $URL"
+echo ""
+
+# Create temp file for HTML
+TMPFILE=$(mktemp)
+trap 'rm -f "$TMPFILE"' EXIT
+
+# Fetch the page
+if ! curl -s -L -A "Mozilla/5.0" "$URL" -o "$TMPFILE"; then
+    echo "Error: Failed to fetch URL"
+    exit 1
+fi
+
+# Check if file is empty
+if [ ! -s "$TMPFILE" ]; then
+    echo "Error: Received empty response"
+    exit 1
+fi
+
+# Try to convert HTML to Markdown using available tools
+if command -v pandoc &> /dev/null; then
+    # Pandoc is the best option - converts HTML to Markdown
+    pandoc -f html -t markdown "$TMPFILE" | head -c "$MAX_LENGTH"
+    TRUNCATED=$?
+    if [ $TRUNCATED -eq 141 ]; then
+        echo ""
+        echo ""
+        echo "---"
+        echo "*[Content truncated at $MAX_LENGTH characters]*"
+    fi
+elif command -v lynx &> /dev/null; then
+    # Lynx is good for plain text
+    lynx -dump -nolist "$TMPFILE" | head -c "$MAX_LENGTH"
+    TRUNCATED=$?
+    if [ $TRUNCATED -eq 141 ]; then
+        echo ""
+        echo ""
+        echo "---"
+        echo "*[Content truncated at $MAX_LENGTH characters]*"
+    fi
+elif command -v w3m &> /dev/null; then
+    # w3m is another good option
+    w3m -dump "$TMPFILE" | head -c "$MAX_LENGTH"
+    TRUNCATED=$?
+    if [ $TRUNCATED -eq 141 ]; then
+        echo ""
+        echo ""
+        echo "---"
+        echo "*[Content truncated at $MAX_LENGTH characters]*"
+    fi
+else
+    # Fallback: basic HTML tag stripping with sed
+    echo "*Note: Install pandoc, lynx, or w3m for better formatting*"
+    echo ""
+    
+    # Remove script and style tags with content
+    sed -e '/<script\>/,/<\/script>/d' -e '/<style\>/,/<\/style>/d' "$TMPFILE" | \
+    # Remove HTML tags
+    sed -e 's/<[^>]*>//g' | \
+    # Decode HTML entities
+    sed -e 's/&nbsp;/ /g' -e 's/&amp;/\&/g' -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&quot;/"/g' -e "s/&#x27;/'/g" | \
+    # Remove extra blank lines
+    sed -e '/^[[:space:]]*$/d' | \
+    # Limit length
+    head -c "$MAX_LENGTH"
+    
+    TRUNCATED=$?
+    if [ $TRUNCATED -eq 141 ]; then
+        echo ""
+        echo ""
+        echo "---"
+        echo "*[Content truncated at $MAX_LENGTH characters]*"
+    fi
+fi
+
+echo ""
