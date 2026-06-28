@@ -1,7 +1,8 @@
 # Weclapp API Skill
 
-Access the Weclapp ERP system (sportident.weclapp.com) via the `weclapp_get` MCP tool.
-Only read operations are available — all mutating requests are blocked by the proxy.
+Access the Weclapp ERP system (sportident.weclapp.com) from `run_code` via the
+pre-injected `WECLAPP_URL` constant. Only read operations are available — all
+mutating requests are blocked by the proxy.
 
 ## Endpoint reference
 
@@ -21,77 +22,34 @@ Load the relevant one before working with a domain — do not load all of them a
 
 ---
 
-## Two ways to call the API
+## Calling the API from `run_code`
 
-### 1. Direct agent tool call (simple, single queries)
-
-Call `weclapp_get` directly:
-
-```
-weclapp_get({ path: "/customer?pageSize=10&serializationVersion=2" })
-weclapp_get({ path: "/salesOrder/id/123" })
-weclapp_get({ path: "/article/count" })
-weclapp_get({ path: "/customer/count?filter=customerNumber = '10042'" })
-```
-
-### 2. From `run_code` (pagination, aggregation, multi-step logic)
-
-Use `run_code` when you need to fetch many records, paginate, or process results.
-`WECLAPP_MCP_URL` is pre-injected — do not define it yourself.
+All Weclapp access goes through `run_code`. `WECLAPP_URL` is pre-injected — do
+not define it yourself. The proxy forwards GET requests to the Weclapp REST API
+v2 and injects the API token transparently, so you never handle credentials.
 
 Use this helper (copy into your code as-is):
 
 ```typescript
-// Helper: call weclapp_get via the local MCP HTTP server
-// Returns parsed JSON or throws on error.
+// Helper: GET a Weclapp API path via the local readonly proxy.
+// `path` is relative to /webapp/api/v2 and must start with "/".
+// Returns parsed JSON or throws on a non-2xx response.
 async function weclappGet(path: string): Promise<unknown> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: "application/json, text/event-stream",
-    "MCP-Protocol-Version": "2025-06-18",
-  };
-
-  // Initialize session
-  const initRes = await fetch(WECLAPP_MCP_URL, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-06-18",
-        capabilities: {},
-        clientInfo: { name: "run_code", version: "1.0" },
-      },
-    }),
-  });
-  const sessionId = initRes.headers.get("mcp-session-id");
-  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
-  // Discard init response body
-  await initRes.text();
-
-  // Call the tool
-  const res = await fetch(WECLAPP_MCP_URL, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: { name: "weclapp_get", arguments: { path } },
-    }),
-  });
-  const body = await res.text();
-  // Parse SSE envelope: find `data:` line
-  const dataLine = body.split("\n").find((l) => l.startsWith("data:"));
-  if (!dataLine) throw new Error(`No SSE data in response for ${path}`);
-  const json = JSON.parse(dataLine.slice(5).trim());
-  const text = json?.result?.content?.[0]?.text;
-  if (json?.result?.isError)
-    throw new Error(`Weclapp API error on ${path}: ${text}`);
-  return JSON.parse(text ?? "null");
+  const res = await fetch(WECLAPP_URL + path.replace(/^\//, ""));
+  if (!res.ok) {
+    throw new Error(`Weclapp ${res.status} on ${path}: ${await res.text()}`);
+  }
+  return res.json();
 }
+```
+
+Examples:
+
+```typescript
+await weclappGet("/party/count");
+await weclappGet("/salesOrder/id/123");
+await weclappGet("/article?pageSize=10&serializationVersion=2");
+await weclappGet("/customer/count?filter=customerNumber = '10042'");
 
 // Helper: fetch all pages of a resource
 async function fetchAll(

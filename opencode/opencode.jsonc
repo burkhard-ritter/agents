@@ -11,23 +11,4 @@
   "permission": {
     "bash": "deny",
   },
-  "mcp": {
-    "weclapp": {
-      "type": "local",
-      // OpenCode spawns this process and communicates via stdio (MCP protocol).
-      // The server also binds an HTTP listener on WECLAPP_MCP_PORT for run_code access.
-      "command": [
-        "/home/burkhard/.deno/bin/deno",
-        "run",
-        "--allow-read=/home/burkhard/.weclapp/credentials",
-        "--allow-net=sportident.weclapp.com,127.0.0.1",
-        "--allow-env=HOME,WECLAPP_MCP_PORT",
-        "/home/burkhard/.config/opencode/mcp/weclapp/server.ts",
-      ],
-      "environment": {
-        "WECLAPP_MCP_PORT": "9876",
-      },
-      "enabled": true,
-    },
-  },
 }

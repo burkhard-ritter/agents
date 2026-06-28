@@ -27,7 +27,7 @@ The Deno process runs with a restricted permission set:
 |---|---|
 | Read files | Only within the session working directory and skills directory |
 | Write files | Only within the session working directory |
-| Network | Blocked (except package imports from JSR/esm.sh at import time) |
+| Network | Blocked, except: package imports from JSR/esm.sh at import time, and (when configured) the local Weclapp proxy via the pre-injected `WECLAPP_URL` — see the weclapp skill |
 | Environment variables | Blocked |
 | Subprocesses | Blocked (unless explicitly configured) |
 | FFI | Blocked |
