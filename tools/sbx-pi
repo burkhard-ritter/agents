@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#
+# sbx-pi - wrapper around `sbx run --kit ... pi` that reuses an existing
+# sandbox VM for the current directory instead of failing with
+# "sandbox already exists and can't be given new workspaces".
+#
+# A sandbox is considered "the one for this directory" if its first
+# workspace entry equals the current working directory (this is how
+# `sbx run` records the primary workspace passed as the first argument).
+#
+# Usage:
+#   sbx-pi [AGENT_ARGS...]
+#
+# Any arguments are forwarded to the pi agent (as `-- AGENT_ARGS...`).
+#
+# Configuration (env vars):
+#   SBX_PI_KIT   - path to the pi kit (default: ~/src/agents/sbx-kit-pi/)
+
+set -euo pipefail
+
+KIT="${SBX_PI_KIT:-$HOME/src/agents/sbx-kit-pi/}"
+AGENT="pi"
+AGENTS_DIR="$HOME/src/agents"
+
+cwd="$PWD"
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: jq is required but not found in PATH" >&2
+  exit 1
+fi
+
+# Extra workspaces always mounted alongside the current directory.
+# Avoid mounting ~/src/agents/ twice if we're already running from within it.
+EXTRA_WORKSPACES=()
+if [[ "$cwd" != "$AGENTS_DIR" ]]; then
+  EXTRA_WORKSPACES+=("$AGENTS_DIR/")
+fi
+EXTRA_WORKSPACES+=("$HOME/.aws:ro")
+
+existing_name="$(
+  sbx ls --json | jq -r --arg cwd "$cwd" --arg agent "$AGENT" \
+    '.sandboxes[] | select(.workspaces[0] == $cwd and .agent == $agent) | .name' | head -n1
+)"
+
+if [[ -n "$existing_name" ]]; then
+  exec sbx run --name "$existing_name" -- "$@"
+else
+  exec sbx run --kit "$KIT" "$AGENT" . "${EXTRA_WORKSPACES[@]}" -- "$@"
+fi
