@@ -1,11 +1,15 @@
-#!/usr/bin/env -S deno run --allow-net
-// search: query DuckDuckGo and return structured results.
+#!/usr/bin/env -S deno run --allow-net=kagi.com --allow-env=KAGI_API_TOKEN
+// search: query the Kagi Search API (v1) and return structured results.
 // Usage: search <query> [num_results]
-
-import { DOMParser } from "jsr:@b-fuze/deno-dom";
+// Requires: KAGI_API_TOKEN environment variable (Kagi API key from
+// https://kagi.com/api/keys).
+//
+// API reference: https://kagi.com/api/docs/openapi/search/search
+// Endpoint: POST https://kagi.com/api/v1/search
+// Auth: HTTP Bearer (Authorization: Bearer <token>)
 
 const [query, numResultsArg] = Deno.args;
-const numResults = parseInt(numResultsArg ?? "5");
+const numResults = Math.max(1, parseInt(numResultsArg ?? "5") || 5);
 
 if (!query) {
   console.error("Usage: search <query> [num_results]");
@@ -13,81 +17,147 @@ if (!query) {
   Deno.exit(1);
 }
 
-console.log(`# Search Results for: ${query}\n`);
+const token = Deno.env.get("KAGI_API_TOKEN")?.trim();
+if (!token) {
+  console.error(
+    "Error: KAGI_API_TOKEN is not set.\n\n" +
+      "The Kagi Search API needs its own API key (separate from a kagi.com\n" +
+      "web subscription). Create one at https://kagi.com/api/keys\n" +
+      "then export it, e.g.:\n\n" +
+      "  export KAGI_API_TOKEN='...'\n",
+  );
+  Deno.exit(1);
+}
 
 // ---------------------------------------------------------------------------
-// 1. Fetch DuckDuckGo HTML search page
+// 1. Query the Kagi Search API (v1)
 // ---------------------------------------------------------------------------
-let html: string;
+interface KagiSearchResult {
+  url?: string;
+  title?: string;
+  snippet?: string;
+  time?: string;
+}
+
+interface KagiErrorDetail {
+  code?: string;
+  url?: string;
+  message?: string;
+  location?: string | null;
+}
+
+interface KagiResponse {
+  meta?: { trace?: string; node?: string; ms?: number };
+  data?: {
+    search?: KagiSearchResult[];
+    [key: string]: unknown;
+  } | null;
+  error?: KagiErrorDetail[];
+  errors?: KagiErrorDetail[];
+}
+
+const endpoint = new URL("https://kagi.com/api/v1/search");
+
+let payload: KagiResponse;
 try {
-  const res = await fetch(
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-    {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-          "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Accept": "application/json",
     },
-  );
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-  html = await res.text();
+    body: JSON.stringify({
+      query,
+      limit: numResults,
+    }),
+  });
+
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => "");
+    let detail = bodyText;
+    try {
+      const parsed = JSON.parse(bodyText) as KagiResponse;
+      const errs = parsed.error ?? parsed.errors;
+      if (errs?.length) {
+        detail = errs
+          .map((e) => `${e.code ?? "?"}: ${e.message ?? "unknown error"}`)
+          .join("; ");
+      }
+    } catch {
+      // not JSON, fall back to raw body text
+    }
+    let hint = "";
+    if (res.status === 401) {
+      hint = "\nHint: the KAGI_API_TOKEN appears to be invalid or revoked. " +
+        "Check https://kagi.com/api/keys";
+    } else if (res.status === 400 || res.status === 403) {
+      hint = "\nHint: check that the token is valid and copied without " +
+        "extra spaces/newlines, and that the account has API access/credits. " +
+        "Search API usage is billed separately from a Kagi web subscription.";
+    } else if (res.status === 429) {
+      hint = "\nHint: rate limited, or API usage limit exhausted — wait a " +
+        "moment and retry, or check your balance at https://kagi.com/api/billing";
+    }
+    throw new Error(
+      `HTTP ${res.status} ${res.statusText}${detail ? `\n${detail.slice(0, 500)}` : ""}${hint}`,
+    );
+  }
+
+  payload = await res.json();
 } catch (e) {
   console.error(`Error fetching search results: ${(e as Error).message}`);
   Deno.exit(1);
 }
 
-// ---------------------------------------------------------------------------
-// 2. Parse HTML
-// ---------------------------------------------------------------------------
-const doc = new DOMParser().parseFromString(html, "text/html")!;
-
-// Detect bot / CAPTCHA page
-if (doc.querySelector(".anomaly-modal__box")) {
-  console.error(
-    "DuckDuckGo returned a bot-detection page.\n" +
-      "This can happen with certain IPs or after repeated requests.\n" +
-      "Try again in a few minutes, or use `fetch` with a known URL instead.",
-  );
+// The API can return 200 (or a 4xx already handled above returned a body
+// we didn't parse) with a non-empty `error`/`errors` array. Some error
+// responses use `errors` instead of the documented `error` key.
+const errors = payload.error ?? payload.errors;
+if (errors?.length) {
+  const msgs = errors
+    .map((e) => `${e.code ?? "?"}: ${e.message ?? "unknown error"}`)
+    .join("; ");
+  console.error(`Kagi API error — ${msgs}`);
   Deno.exit(1);
 }
 
 // ---------------------------------------------------------------------------
-// 3. Extract results
+// 2. Render web results (data.search) as Markdown
 // ---------------------------------------------------------------------------
 
-/** Resolve DuckDuckGo's redirect wrapper, e.g. /?uddg=<encoded-url> */
-function resolveUrl(raw: string): string {
-  const uddg = raw.match(/[?&]uddg=([^&]+)/)?.[1];
-  return uddg ? decodeURIComponent(uddg) : raw;
+// Snippets may contain HTML highlight markup (e.g. <strong>) and entities;
+// strip tags and decode the common entities for cleaner Markdown output.
+function cleanSnippet(snippet: string | undefined): string {
+  if (!snippet) return "";
+  const entities: Record<string, string> = {
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&#39;": "'",
+  };
+  return snippet
+    .replace(/<\/?[a-z][^>]*>/gi, "")
+    .replace(/&(amp|lt|gt|quot|#39);/g, (m) => entities[m])
+    .replace(/\s+/g, " ")
+    .trim();
 }
+console.log(`# Search Results for: ${query}\n`);
 
-const resultEls = Array.from(doc.querySelectorAll(".result")).slice(
-  0,
-  numResults,
-);
+const results = (payload.data?.search ?? [])
+  .filter((r) => r.url)
+  .slice(0, numResults);
 
 let count = 0;
-for (const result of resultEls) {
-  const titleEl = result.querySelector(".result__a");
-  if (!titleEl) continue;
-
-  const title = titleEl.textContent?.trim();
-  const snippet = result.querySelector(".result__snippet")?.textContent?.trim();
-  const url = resolveUrl(titleEl.getAttribute("href") ?? "");
-
+for (const result of results) {
   count++;
-  console.log(`## ${count}. ${title}\n`);
-  console.log(`**URL:** ${url}\n`);
+  console.log(`## ${count}. ${cleanSnippet(result.title) || result.url}\n`);
+  console.log(`**URL:** ${result.url}\n`);
+  const snippet = cleanSnippet(result.snippet);
   if (snippet) console.log(`${snippet}\n`);
 }
 
 if (count === 0) {
-  console.log(
-    "No results found. " +
-      "DuckDuckGo may have changed its HTML format — " +
-      "check https://html.duckduckgo.com/html/?q=test in a browser to verify.",
-  );
+  console.log("No results found. Try rephrasing or broadening the query.");
 }
